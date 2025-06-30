@@ -1,61 +1,43 @@
-const express = require('express');
-const cors = require('cors');
-const mysql = require('mysql2');
-const { default: axios } = require('axios');
+const mysql = require('mysql2/promise');
+const axios = require('axios');
 
-const app = express();
-const port = 4000;
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
-app.use(cors());
-app.use(express.json());
+  const { name } = req.body;
 
+  if (!name) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
 
-const db = mysql.createPool({
-    host: 'sql12.freesqldatabase.com',
-    user: 'sql12787456',
-    password: '1LbqpQMwlf',
-    database: 'sql12787456',
-    port: 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+  let ip;
+  try {
+    const response = await axios.get('https://api.ipify.org?format=json');
+    ip = response.data.ip;
+  } catch (err) {
+    console.error('Error fetching IP:', err);
+    return res.status(500).json({ error: 'Failed to get IP' });
+  }
 
-// db.connect((err) => {
-//     if (err) {
-//         console.error('❌ Database connection failed:', err);
-//     } else {
-//         console.log('✅ Connected to MySQL database.');
-//     }
-// });
+  try {
+    const connection = await mysql.createConnection({
+      host: 'sql12.freesqldatabase.com',
+      user: 'sql12787456',
+      password: '1LbqpQMwlf',
+      database: 'sql12787456',
+      port: 3306,
+    });
 
+    const [result] = await connection.execute(
+      'INSERT INTO user_info (name, ip) VALUES (?, ?)',
+      [name, ip]
+    );
 
-app.post('/api',async(req,res)=>{
-    let ip = null;
-    const {name} = req.body;
-    console.log(name);
+    await connection.end();
 
-    try {
-        const resposne = await axios.get('https://api.ipify.org/');
-        console.log(resposne.data);
-        ip = resposne.data;
-        console.log(ip);
-    } catch (error) {
-        console.log(error);
-    }
-
-
-    const query = "insert into user_info(name,ip) values(?,?)";
-    db.query(query, [name,ip],(e,reuslt)=>{
-        if (e){
-            return console.log('error',e);
-        } console.log(reuslt);
-    })
-})
-
-
-
-// ✅ Start server
-app.listen(port, () => {
-    console.log(`🚀 Server is running at http://localhost:${port}`);
-});
+    res.status(200).json({ success: true, insertedId: result.insertId });
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: 'Database query failed' });
+  }
+};
